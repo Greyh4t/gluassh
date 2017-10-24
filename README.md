@@ -1,4 +1,4 @@
-# gluassh
+# gluasocket
 
 
 ## example
@@ -24,9 +24,9 @@ func main() {
 		`ssh=require("ssh")
 		c=ssh.new()
 		c:settimeout(5)
-		err = c:connect("192.168.206.129", 22, "root", "      ")
+		err = c:connect("192.168.206.129", 22, "root", "password")
 		if err == nil then
-			stdout,stderr,err = c:exec("cd /&&pwd&&ls")
+			stdout,stderr,err = c:exec("ping www.google.com", 5)
 			c:close()
 			print(stdout)
 			print("---------------")

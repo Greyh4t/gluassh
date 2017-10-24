@@ -13,7 +13,6 @@ import (
 type SSH struct {
 	timeout time.Duration
 	client  *ssh.Client
-	session *ssh.Session
 }
 
 func newSSH(L *lua.LState) int {
@@ -84,24 +83,34 @@ func connect(L *lua.LState) int {
 func exec(L *lua.LState) int {
 	s := checkSSH(L)
 	command := L.CheckString(2)
+	timeout := L.ToInt(3)
 	session, err := s.client.NewSession()
-	if err != nil {
-		L.Push(lua.LString(""))
-		L.Push(lua.LString(""))
-		L.Push(lua.LString(err.Error()))
-		return 3
-	}
-	defer session.Close()
-
 	var o, e bytes.Buffer
-	session.Stdout = &o
-	session.Stderr = &e
-
-	err = session.Run(command)
-
+	if err == nil {
+		session.Stdout = &o
+		session.Stderr = &e
+		err = session.Start(command)
+		if err == nil {
+			if timeout > 0 {
+				var c = make(chan error, 1)
+				go func() { c <- session.Wait() }()
+				select {
+				case <-time.After(time.Second * time.Duration(timeout)):
+					session.Close()
+					err = <-c
+				case err = <-c:
+					session.Close()
+				}
+			} else {
+				err = session.Wait()
+				session.Close()
+			}
+		} else {
+			session.Close()
+		}
+	}
 	L.Push(lua.LString(o.String()))
 	L.Push(lua.LString(e.String()))
-
 	if err != nil {
 		L.Push(lua.LString(err.Error()))
 		return 3
@@ -111,9 +120,6 @@ func exec(L *lua.LState) int {
 
 func close(L *lua.LState) int {
 	s := checkSSH(L)
-	if s.session != nil {
-		s.session.Close()
-	}
 	s.client.Close()
 	return 0
 }
