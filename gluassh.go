@@ -111,9 +111,9 @@ func exec(L *lua.LState) int {
 
 func close(L *lua.LState) int {
 	s := checkSSH(L)
-	s.client.Close()
 	if s.session != nil {
 		s.session.Close()
 	}
+	s.client.Close()
 	return 0
 }
