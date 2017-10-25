@@ -87,26 +87,20 @@ func exec(L *lua.LState) int {
 	session, err := s.client.NewSession()
 	var o, e bytes.Buffer
 	if err == nil {
+		defer session.Close()
 		session.Stdout = &o
 		session.Stderr = &e
 		err = session.Start(command)
 		if err == nil {
 			if timeout > 0 {
-				var c = make(chan error, 1)
-				go func() { c <- session.Wait() }()
-				select {
-				case <-time.After(time.Second * time.Duration(timeout)):
+				timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
 					session.Close()
-					err = <-c
-				case err = <-c:
-					session.Close()
-				}
+				})
+				err = session.Wait()
+				timer.Stop()
 			} else {
 				err = session.Wait()
-				session.Close()
 			}
-		} else {
-			session.Close()
 		}
 	}
 	L.Push(lua.LString(o.String()))
