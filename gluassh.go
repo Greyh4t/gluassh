@@ -70,6 +70,7 @@ func connect(L *lua.LState) int {
 			return nil
 		},
 	}
+	config.Ciphers = append(config.Ciphers, "aes256-cbc", "aes128-cbc", "3des-cbc", "des-cbc")
 
 	client, err := ssh.Dial("tcp", host, config)
 	if err != nil {
