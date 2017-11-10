@@ -63,6 +63,11 @@ func connect(L *lua.LState) int {
 	host := L.CheckString(2) + ":" + strconv.Itoa(L.CheckInt(3))
 	username := L.CheckString(4)
 	password := L.CheckString(5)
+
+	var sshConfig ssh.Config
+	sshConfig.SetDefaults()
+	sshConfig.Ciphers = append(sshConfig.Ciphers, "aes256-cbc", "aes128-cbc", "3des-cbc", "des-cbc")
+
 	config := &ssh.ClientConfig{
 		User: username,
 		Auth: []ssh.AuthMethod{
@@ -72,8 +77,8 @@ func connect(L *lua.LState) int {
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			return nil
 		},
+		Config: sshConfig,
 	}
-	config.Ciphers = append(config.Ciphers, "aes128-ctr", "aes192-ctr", "aes256-ctr", "aes128-gcm@openssh.com", "arcfour256", "arcfour128", "aes256-cbc", "aes128-cbc", "3des-cbc", "des-cbc")
 
 	client, err := ssh.Dial("tcp", host, config)
 	if err != nil {
