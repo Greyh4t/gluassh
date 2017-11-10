@@ -26,16 +26,19 @@ func newSSH(L *lua.LState) int {
 }
 
 func Loader(L *lua.LState) int {
-	luaSSH := L.NewTypeMetatable("ssh")
-	L.SetGlobal("ssh", luaSSH)
-	L.SetField(luaSSH, "new", L.NewFunction(newSSH))
-	L.SetField(luaSSH, "__index", L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
-		"new":        newSSH,
+	luaSSH := L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
+		"new": newSSH,
+	})
+
+	mt := L.NewTypeMetatable("ssh")
+	L.SetField(mt, "__index", L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
 		"settimeout": settimeout,
 		"connect":    connect,
 		"exec":       exec,
 		"close":      close,
 	}))
+	L.SetField(luaSSH, "ssh", mt)
+
 	L.Push(luaSSH)
 	return 1
 }
@@ -70,7 +73,7 @@ func connect(L *lua.LState) int {
 			return nil
 		},
 	}
-	config.Ciphers = append(config.Ciphers, "aes256-cbc", "aes128-cbc", "3des-cbc", "des-cbc")
+	config.Ciphers = append(config.Ciphers, "aes128-ctr", "aes192-ctr", "aes256-ctr", "aes128-gcm@openssh.com", "arcfour256", "arcfour128", "aes256-cbc", "aes128-cbc", "3des-cbc", "des-cbc")
 
 	client, err := ssh.Dial("tcp", host, config)
 	if err != nil {
