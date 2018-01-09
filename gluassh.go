@@ -31,11 +31,30 @@ func Loader(L *lua.LState) int {
 	})
 
 	mt := L.NewTypeMetatable("ssh")
+
 	L.SetField(mt, "__index", L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
 		"settimeout": settimeout,
 		"connect":    connect,
 		"exec":       exec,
-		"close":      close,
+		"close":      _close,
+	}))
+	L.SetField(luaSSH, "ssh", mt)
+
+	L.Push(luaSSH)
+	return 1
+}
+
+func AsyncLoader(L *lua.LState) int {
+	luaSSH := L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
+		"new": newSSH,
+	})
+
+	mt := L.NewTypeMetatable("ssh")
+	L.SetField(mt, "__index", L.SetFuncs(L.NewTable(), map[string]lua.LGFunction{
+		"settimeout": settimeout,
+		"connect":    asyncConnect,
+		"exec":       asyncExec,
+		"close":      _close,
 	}))
 	L.SetField(luaSSH, "ssh", mt)
 
@@ -58,6 +77,13 @@ func settimeout(L *lua.LState) int {
 	return 0
 }
 
+func _close(L *lua.LState) int {
+	s := checkSSH(L)
+	s.client.Close()
+	return 0
+}
+
+//sync
 func connect(L *lua.LState) int {
 	s := checkSSH(L)
 	host := L.CheckString(2) + ":" + strconv.Itoa(L.CheckInt(3))
@@ -121,8 +147,77 @@ func exec(L *lua.LState) int {
 	return 2
 }
 
-func close(L *lua.LState) int {
+//async
+func asyncConnect(L *lua.LState) int {
 	s := checkSSH(L)
-	s.client.Close()
-	return 0
+	host := L.CheckString(2) + ":" + strconv.Itoa(L.CheckInt(3))
+	username := L.CheckString(4)
+	password := L.CheckString(5)
+	resultChan := make(chan lua.LValue, 1)
+
+	go func(s *SSH, host, username, password string, resultChan chan lua.LValue) {
+		var sshConfig ssh.Config
+		sshConfig.SetDefaults()
+		sshConfig.Ciphers = append(sshConfig.Ciphers, "aes256-cbc", "aes128-cbc", "3des-cbc", "des-cbc")
+
+		config := &ssh.ClientConfig{
+			User: username,
+			Auth: []ssh.AuthMethod{
+				ssh.Password(password),
+			},
+			Timeout: s.timeout,
+			HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+				return nil
+			},
+			Config: sshConfig,
+		}
+
+		client, err := ssh.Dial("tcp", host, config)
+		if err != nil {
+			resultChan <- lua.LString(err.Error())
+			close(resultChan)
+			return
+		}
+		s.client = client
+		close(resultChan)
+	}(s, host, username, password, resultChan)
+
+	return L.Yield(lua.LChannel(resultChan))
+}
+
+func asyncExec(L *lua.LState) int {
+	s := checkSSH(L)
+	command := L.CheckString(2)
+	timeout := L.ToInt(3)
+	resultChan := make(chan lua.LValue, 3)
+
+	go func(s *SSH, command string, timeout int, resultChan chan lua.LValue) {
+		session, err := s.client.NewSession()
+		var o, e bytes.Buffer
+		if err == nil {
+			defer session.Close()
+			session.Stdout = &o
+			session.Stderr = &e
+			err = session.Start(command)
+			if err == nil {
+				if timeout > 0 {
+					timer := time.AfterFunc(time.Duration(timeout)*time.Second, func() {
+						session.Close()
+					})
+					err = session.Wait()
+					timer.Stop()
+				} else {
+					err = session.Wait()
+				}
+			}
+		}
+		resultChan <- lua.LString(o.String())
+		resultChan <- lua.LString(e.String())
+		if err != nil {
+			resultChan <- lua.LString(err.Error())
+		}
+		close(resultChan)
+	}(s, command, timeout, resultChan)
+
+	return L.Yield(lua.LChannel(resultChan))
 }
